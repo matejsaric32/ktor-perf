@@ -14,7 +14,7 @@ class RedisService(
         jedis.setex(key, ttlSeconds.toLong(), value)
     }
     
-    private inline fun <reified T> getObject(key : String) : T? {
+    inline fun <reified T> getObject(key : String) : T? {
         val value = get(key) ?: return null
         return json.decodeFromString<T>(value)
     }
