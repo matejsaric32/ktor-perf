@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import model.OrderSummary
 import model.OrderViewedEvent
 
-fun Application.configureRouting() {
+fun Application.configureIORouting() {
     val dbConnection = connectToPostgres(embedded = false)
     val orderService = OrderService(dbConnection)
     val redisService = RedisService()

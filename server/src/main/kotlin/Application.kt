@@ -19,5 +19,9 @@ fun Application.module() {
     this.configureSerialization()
     configureDatabases()
     configureFrameworks()
-    configureRouting()
+    
+    configureHealthRouting()
+    configureComputeRouting()
+    configureEchoRouting()
+    configureIORouting()
 }
