@@ -10,7 +10,6 @@ fun Application.module() {
     configureHTTP()
     configureMonitoring()
     configureSerialization()
-    configureDatabases()
     configureFrameworks()
     configureRouting()
 }
