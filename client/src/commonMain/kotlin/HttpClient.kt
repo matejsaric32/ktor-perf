@@ -1,5 +1,4 @@
-package hr.algebra.perf
-
+import hr.algebra.perf.getOpenTelemetry
 import io.ktor.client.*
 import io.ktor.http.*
 import io.opentelemetry.instrumentation.ktor.v3_0.KtorClientTelemetry

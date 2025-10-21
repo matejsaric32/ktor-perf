@@ -1,5 +1,8 @@
-package hr.algebra.perf
-
+import hr.algebra.perf.configureDatabases
+import hr.algebra.perf.configureFrameworks
+import hr.algebra.perf.configureHTTP
+import hr.algebra.perf.configureMonitoring
+import hr.algebra.perf.configureSerialization
 import io.ktor.server.application.*
 
 fun main(args : Array<String>) {
@@ -10,6 +13,11 @@ fun Application.module() {
     configureHTTP()
     configureMonitoring()
     configureSerialization()
+    configureFrameworks()
+    configureHTTP()
+    configureMonitoring()
+    this.configureSerialization()
+    configureDatabases()
     configureFrameworks()
     configureRouting()
 }
