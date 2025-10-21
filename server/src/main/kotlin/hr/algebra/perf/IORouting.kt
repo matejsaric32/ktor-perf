@@ -1,12 +1,13 @@
-import hr.algebra.perf.connectToPostgres
+package hr.algebra.perf
+
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import model.OrderSummary
-import model.OrderViewedEvent
+import hr.algebra.perf.model.OrderSummary
+import hr.algebra.perf.model.OrderViewedEvent
 
 fun Application.configureIORouting() {
     val dbConnection = connectToPostgres(embedded = false)

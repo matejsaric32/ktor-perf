@@ -1,5 +1,7 @@
+package hr.algebra.perf
+
 import kotlinx.serialization.json.Json
-import model.OrderViewedEvent
+import hr.algebra.perf.model.OrderViewedEvent
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.ProducerRecord
 import java.util.Properties

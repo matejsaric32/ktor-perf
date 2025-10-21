@@ -1,3 +1,5 @@
+package hr.algebra.perf
+
 import kotlinx.serialization.json.Json
 import redis.clients.jedis.Jedis
 

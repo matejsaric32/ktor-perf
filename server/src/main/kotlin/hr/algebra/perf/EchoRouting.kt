@@ -1,10 +1,12 @@
+package hr.algebra.perf
+
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import model.EchoRequest
-import model.EchoResponse
+import hr.algebra.perf.model.EchoRequest
+import hr.algebra.perf.model.EchoResponse
 
 fun Application.configureEchoRouting() {
     routing {

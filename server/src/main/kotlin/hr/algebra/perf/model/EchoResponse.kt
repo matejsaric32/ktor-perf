@@ -1,4 +1,4 @@
-package model
+package hr.algebra.perf.model
 
 import kotlinx.serialization.Serializable
 

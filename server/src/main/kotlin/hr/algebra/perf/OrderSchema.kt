@@ -1,7 +1,9 @@
+package hr.algebra.perf
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import model.Order
-import model.OrderSummary
+import hr.algebra.perf.model.Order
+import hr.algebra.perf.model.OrderSummary
 import org.intellij.lang.annotations.Language
 import java.sql.Connection
 
