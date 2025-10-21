@@ -3,6 +3,8 @@ val koin_version : String by project
 val kotlin_version : String by project
 val logback_version : String by project
 val postgres_version : String by project
+val jedis_version : String by project
+val kafka_version : String by project
 
 plugins {
     kotlin("jvm") version "2.2.20"
@@ -30,6 +32,8 @@ dependencies {
     implementation("io.ktor:ktor-server-config-yaml")
     testImplementation("io.ktor:ktor-server-test-host")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
-    implementation("redis.clients:jedis:7.0.0")
+    implementation("redis.clients:jedis:$jedis_version")
+    implementation("org.apache.kafka:kafka-clients:$kafka_version")
+    
     
 }
