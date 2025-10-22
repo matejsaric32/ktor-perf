@@ -1,10 +1,13 @@
 package hr.algebra.perf
 
+import hr.algebra.perf.model.CreateOrderRequest
 import hr.algebra.perf.model.Order
 import hr.algebra.perf.model.OrderSummary
+import hr.algebra.perf.model.UserStats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.sql.Connection
+import java.sql.Statement
 
 class OrderService(
     private val connection : Connection,
@@ -43,5 +46,87 @@ class OrderService(
         }
         
         OrderSummary(userId, orders)
+    }
+    
+    suspend fun getUserStats(userId : Int) : UserStats = withContext(Dispatchers.IO) {
+        val query = """
+            SELECT
+                COUNT(*) as total_orders,
+                COALESCE(SUM(total_amount), 0) as total_spent,
+                COALESCE(AVG(total_amount), 0) as avg_order_value,
+                MAX(created_at) as last_order_date
+            FROM $schema.orders
+            WHERE user_id = ?
+        """
+        
+        val statement = connection.prepareStatement(query)
+        statement.setInt(1, userId)
+        val resultSet = statement.executeQuery()
+        
+        if (resultSet.next()) {
+            UserStats(
+                userId = userId,
+                totalOrders = resultSet.getInt("total_orders"),
+                totalSpent = resultSet.getDouble("total_spent"),
+                averageOrderValue = resultSet.getDouble("avg_order_value"),
+                lastOrderDate = resultSet.getLong("last_order_date")
+            )
+        } else {
+            UserStats(
+                userId = userId,
+                totalOrders = 0,
+                totalSpent = 0.0,
+                averageOrderValue = 0.0,
+                lastOrderDate = null
+            )
+        }
+    }
+    
+    suspend fun createOrder(request : CreateOrderRequest) : Int = withContext(Dispatchers.IO) {
+        connection.autoCommit = false
+        
+        try {
+            val insertOrderQuery = """
+                INSERT INTO $schema.orders (user_id, total_amount, status, created_at)
+                VALUES (?, ?, ?, ?)
+            """
+            
+            val orderStatement = connection.prepareStatement(insertOrderQuery, Statement.RETURN_GENERATED_KEYS)
+            orderStatement.setInt(1, request.userId)
+            orderStatement.setDouble(2, request.totalAmount)
+            orderStatement.setString(3, request.status)
+            orderStatement.setLong(4, System.currentTimeMillis())
+            orderStatement.executeUpdate()
+            
+            val generatedKeys = orderStatement.generatedKeys
+            val orderId = if (generatedKeys.next()) {
+                generatedKeys.getInt(1)
+            } else {
+                throw Exception("Failed to create order - no ID generated")
+            }
+            
+            val insertItemQuery = """
+                INSERT INTO $schema.order_items (order_id, product_name, quantity, price)
+                VALUES (?, ?, ?, ?)
+            """
+            
+            val itemStatement = connection.prepareStatement(insertItemQuery)
+            for (item in request.items) {
+                itemStatement.setInt(1, orderId)
+                itemStatement.setString(2, item.productName)
+                itemStatement.setInt(3, item.quantity)
+                itemStatement.setDouble(4, item.price)
+                itemStatement.addBatch()
+            }
+            itemStatement.executeBatch()
+            
+            connection.commit()
+            orderId
+        } catch (e : Exception) {
+            connection.rollback()
+            throw e
+        } finally {
+            connection.autoCommit = true
+        }
     }
 }
