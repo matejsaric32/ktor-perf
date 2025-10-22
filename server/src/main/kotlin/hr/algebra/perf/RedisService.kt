@@ -17,7 +17,18 @@ class RedisService(
         jedis.setex(key, ttlSeconds.toLong(), value)
     }
     
-    inline fun <reified T> getObject(key: String): T? {
+    fun delete(key : String) : Long = jedis.del(key)
+    
+    fun deletePattern(pattern : String) : Long {
+        val keys = jedis.keys(pattern)
+        return if (keys.isNotEmpty()) {
+            jedis.del(*keys.toTypedArray())
+        } else {
+            0L
+        }
+    }
+    
+    inline fun <reified T> getObject(key : String) : T? {
         val value = get(key) ?: return null
         return json.decodeFromString<T>(value)
     }
