@@ -33,14 +33,4 @@ fun Application.configureMonitoring() {
             }
         }
     }
-    routing {
-        get("/hello") {
-            call.respondText("Hello World!")
-        }
-        
-        post("/post") {
-            val postData = call.receiveText()
-            call.respondText("Received: $postData")
-        }
-    }
 }

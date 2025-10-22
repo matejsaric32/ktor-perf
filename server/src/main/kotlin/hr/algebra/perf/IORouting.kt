@@ -1,5 +1,6 @@
 package hr.algebra.perf
 
+import hr.algebra.perf.model.IOResponse
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.response.*
@@ -62,12 +63,7 @@ fun Application.configureIORouting() {
             
             metrics["total_ms"] = System.currentTimeMillis() - startTime
             
-            call.respond(
-                HttpStatusCode.OK, mapOf(
-                    "data" to orderSummary,
-                    "metrics" to metrics
-                )
-            )
+            call.respond(HttpStatusCode.OK, IOResponse(data = orderSummary, metrics = metrics))
         }
     }
 }
