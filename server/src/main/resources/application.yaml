@@ -4,7 +4,7 @@ ktor:
       - hr.algebra.perf.ApplicationKt.module
   deployment:
     port: 8080
-postgres:
+database:
   url: "jdbc:postgresql://localhost:5432/postgres"
   user: perf_a
   password: 1234567890

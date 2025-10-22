@@ -10,10 +10,14 @@ import hr.algebra.perf.model.OrderSummary
 import hr.algebra.perf.model.OrderViewedEvent
 
 fun Application.configureIORouting() {
-    val dbConnection = connectToPostgres(embedded = false)
-    val orderService = OrderService(dbConnection)
-    val redisService = RedisService()
-    val kafkaProducer = KafkaProducerService()
+    val databaseConfig = getDatabaseConfig()
+    val redisConfig = getRedisConfig()
+    val kafkaConfig = getKafkaConfig()
+    
+    val dbConnection = connectToDatabase(databaseConfig)
+    val orderService = OrderService(dbConnection, databaseConfig.schema)
+    val redisService = RedisService(redisConfig)
+    val kafkaProducer = KafkaProducerService(kafkaConfig)
     
     routing {
         get("/io") {
@@ -39,7 +43,7 @@ fun Application.configureIORouting() {
                 metrics["db_query_ms"] = System.currentTimeMillis() - dbStart
                 
                 val redisSaveStart = System.currentTimeMillis()
-                redisService.setObject(cacheKey, summary, ttlSeconds = 300)
+                redisService.setObject(cacheKey, summary, ttlSeconds = redisConfig.ttl)
                 metrics["redis_set_ms"] = System.currentTimeMillis() - redisSaveStart
                 
                 summary
