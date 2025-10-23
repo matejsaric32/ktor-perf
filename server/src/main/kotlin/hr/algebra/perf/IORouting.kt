@@ -8,6 +8,7 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.*
 
 fun Application.configureIORouting() {
     val databaseConfig = getDatabaseConfig()
@@ -22,8 +23,9 @@ fun Application.configureIORouting() {
     
     routing {
         get("/io/light") {
-            val userId = call.request.queryParameters["user_id"]?.toIntOrNull()
-                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing user_id parameter")
+            val userId = call.request.queryParameters["user_id"]?.toIntOrNull() ?: return@get call.respond(
+                HttpStatusCode.BadRequest, "Missing user_id parameter"
+            )
             
             val startTime = System.currentTimeMillis()
             
@@ -44,8 +46,7 @@ fun Application.configureIORouting() {
                     OrderViewedEvent(
                         userId = userId,
                         orderCount = orderSummary.orders.size,
-                        totalAmount = orderSummary.orders.sumOf { it.totalAmount }
-                    )
+                        totalAmount = orderSummary.orders.sumOf { it.totalAmount })
                 )
             }
             val kafkaPublishMs = System.currentTimeMillis() - kafkaStart
@@ -53,8 +54,7 @@ fun Application.configureIORouting() {
             val totalMs = System.currentTimeMillis() - startTime
             
             val response = IOLightResponse(
-                data = orderSummary,
-                metrics = IOMetrics(
+                data = orderSummary, metrics = IOMetrics(
                     redisGetMs = redisGetMs,
                     cacheHit = cachedSummary != null,
                     dbQueryMs = dbQueryMs,
@@ -69,8 +69,9 @@ fun Application.configureIORouting() {
         }
         
         get("/io/heavy") {
-            val userId = call.request.queryParameters["user_id"]?.toIntOrNull()
-                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing user_id parameter")
+            val userId = call.request.queryParameters["user_id"]?.toIntOrNull() ?: return@get call.respond(
+                HttpStatusCode.BadRequest, "Missing user_id parameter"
+            )
             
             val startTime = System.currentTimeMillis()
             val metrics = mutableMapOf<String, Any>()
@@ -90,8 +91,7 @@ fun Application.configureIORouting() {
             
             val slowQueryStart = System.currentTimeMillis()
             val (slowResults, slowQueryTime) = benchmarkService.slowQueryUnindexedSessionId(
-                "session-${userId % 10}",
-                50
+                "session-${userId % 10}", 50
             )
             metrics["slow_query_ms"] = slowQueryTime
             metrics["slow_query_results"] = slowResults.size
@@ -124,15 +124,13 @@ fun Application.configureIORouting() {
                     OrderViewedEvent(
                         userId = userId,
                         orderCount = orderSummary.orders.size,
-                        totalAmount = orderSummary.orders.sumOf { it.totalAmount }
-                    ))
+                        totalAmount = orderSummary.orders.sumOf { it.totalAmount })
+                )
                 
                 repeat(4) { i ->
                     kafkaProducer.publishOrderViewed(
                         OrderViewedEvent(
-                            userId = userId,
-                            orderCount = i + 1,
-                            totalAmount = (i + 1) * 100.0
+                            userId = userId, orderCount = i + 1, totalAmount = (i + 1) * 100.0
                         )
                     )
                 }
@@ -145,9 +143,7 @@ fun Application.configureIORouting() {
             redisService.setObject(cacheKey1, orderSummary, ttlSeconds = redisConfig.ttl)
             redisService.set(cacheKey2, redisService.json.encodeToString(userStats), ttlSeconds = redisConfig.ttl)
             redisService.set(
-                cacheKey3,
-                """{"processed": true, "timestamp": ${System.currentTimeMillis()}}""",
-                ttlSeconds = 60
+                cacheKey3, """{"processed": true, "timestamp": ${System.currentTimeMillis()}}""", ttlSeconds = 60
             )
             metrics["cache_writes"] = 3
             metrics["cache_write_ms"] = System.currentTimeMillis() - cacheWriteStart
@@ -159,18 +155,18 @@ fun Application.configureIORouting() {
             metrics["total_operations"] = operationCount.size
             metrics["operations_list"] = operationCount
             
-            call.respond(
-                HttpStatusCode.OK, mapOf(
-                    "data" to mapOf(
-                        "orderSummary" to orderSummary,
-                        "userStats" to userStats,
-                        "slowQueryResults" to slowResults.size,
-                        "fastQueryResults" to fastResults.size,
-                        "aggregationData" to aggData
-                    ),
-                    "metrics" to metrics
-                )
+            val response = IOHeavyResponse(
+                data = IOHeavyData(
+                    orderSummary = orderSummary,
+                    userStats = userStats,
+                    slowQueryResults = slowResults.size,
+                    fastQueryResults = fastResults.size,
+                    aggregationData = aggData.toJsonElement() as JsonObject
+                ),
+                metrics = metrics.mapValues { it.value }.toJsonElement() as JsonObject
             )
+            
+            call.respond(HttpStatusCode.OK, response)
         }
         
         post("/io/heavy/write") {
@@ -182,12 +178,8 @@ fun Application.configureIORouting() {
             
             val orderStart = System.currentTimeMillis()
             val orderRequest = CreateOrderRequest(
-                userId = userId,
-                totalAmount = 100.0 + (userId * 10),
-                status = "pending",
-                items = listOf(
-                    OrderItem("Product-A", 1, 50.0),
-                    OrderItem("Product-B", 2, 25.0)
+                userId = userId, totalAmount = 100.0 + (userId * 10), status = "pending", items = listOf(
+                    OrderItem("Product-A", 1, 50.0), OrderItem("Product-B", 2, 25.0)
                 )
             )
             val orderId = orderService.createOrder(orderRequest)
@@ -235,11 +227,8 @@ fun Application.configureIORouting() {
             call.respond(
                 HttpStatusCode.Created, mapOf(
                     "result" to mapOf(
-                        "orderId" to orderId,
-                        "bulkInserted" to insertedCount,
-                        "userId" to userId
-                    ),
-                    "metrics" to metrics
+                        "orderId" to orderId, "bulkInserted" to insertedCount, "userId" to userId
+                    ), "metrics" to metrics
                 )
             )
         }
@@ -283,9 +272,7 @@ fun Application.configureIORouting() {
                 repeat(20) { i ->
                     kafkaProducer.publishOrderViewed(
                         OrderViewedEvent(
-                            userId = userId + i,
-                            orderCount = i,
-                            totalAmount = i * 100.0
+                            userId = userId + i, orderCount = i, totalAmount = i * 100.0
                         )
                     )
                 }
@@ -305,8 +292,7 @@ fun Application.configureIORouting() {
             
             call.respond(
                 HttpStatusCode.OK, mapOf(
-                    "test" to "comprehensive_stress_test",
-                    "metrics" to metrics
+                    "test" to "comprehensive_stress_test", "metrics" to metrics
                 )
             )
         }
@@ -316,17 +302,11 @@ fun Application.configureIORouting() {
             
             call.respond(
                 HttpStatusCode.OK, mapOf(
-                    "status" to "operational",
-                    "services" to mapOf(
-                        "database" to "connected",
-                        "redis" to "connected",
-                        "kafka" to "connected"
-                    ),
-                    "benchmark_data" to mapOf(
-                        "total_rows" to benchmarkRows,
-                        "ready" to (benchmarkRows > 0)
-                    ),
-                    "endpoints" to mapOf(
+                    "status" to "operational", "services" to mapOf(
+                        "database" to "connected", "redis" to "connected", "kafka" to "connected"
+                    ), "benchmark_data" to mapOf(
+                        "total_rows" to benchmarkRows, "ready" to (benchmarkRows > 0)
+                    ), "endpoints" to mapOf(
                         "light" to "/io/light (1 DB + 1 Redis + 1 Kafka)",
                         "heavy" to "/io/heavy (6 DB queries + 8 Redis + 5 Kafka)",
                         "heavy_write" to "/io/heavy/write (3 DB writes + 4 cache ops + 10 Kafka)",
@@ -334,6 +314,29 @@ fun Application.configureIORouting() {
                     )
                 )
             )
+        }
+    }
+}
+
+private fun Map<String, Any>.toJsonElement() : JsonElement = buildJsonObject {
+    this@toJsonElement.forEach { (key, value) ->
+        when (value) {
+            is String -> put(key, value)
+            is Number -> put(key, value)
+            is Boolean -> put(key, value)
+            is Map<*, *> -> put(key, (value as Map<String, Any>).toJsonElement())
+            is List<*> -> put(key, JsonArray(value.map {
+                when (it) {
+                    is String -> JsonPrimitive(it)
+                    is Number -> JsonPrimitive(it)
+                    is Boolean -> JsonPrimitive(it)
+                    is Map<*, *> -> (it as Map<String, Any>).toJsonElement()
+                    else -> JsonPrimitive(it.toString())
+                }
+            }))
+            
+            null -> put(key, JsonNull)
+            else -> put(key, value.toString())
         }
     }
 }
