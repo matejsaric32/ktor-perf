@@ -15,14 +15,6 @@ data class BenchmarkLog(
 )
 
 @Serializable
-data class BenchmarkEvent(
-    val eventType : String,
-    val eventData : Map<String, String>,
-    val sourceSystem : String,
-    val correlationId : String
-)
-
-@Serializable
 data class BenchmarkInsertRequest(
     val count : Int = 100,
     val eventType : String = "benchmark_test"
