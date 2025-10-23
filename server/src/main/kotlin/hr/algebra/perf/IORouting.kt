@@ -174,34 +174,38 @@ fun Application.configureIORouting() {
             val bulkCount = call.request.queryParameters["bulk_count"]?.toIntOrNull() ?: 100
             
             val startTime = System.currentTimeMillis()
-            val metrics = mutableMapOf<String, Any>()
+            val metrics = mutableMapOf<String, String>()
             
             val orderStart = System.currentTimeMillis()
             val orderRequest = CreateOrderRequest(
-                userId = userId, totalAmount = 100.0 + (userId * 10), status = "pending", items = listOf(
-                    OrderItem("Product-A", 1, 50.0), OrderItem("Product-B", 2, 25.0)
+                userId = userId,
+                totalAmount = 100.0 + (userId * 10),
+                status = "pending",
+                items = listOf(
+                    OrderItem("Product-A", 1, 50.0),
+                    OrderItem("Product-B", 2, 25.0)
                 )
             )
             val orderId = orderService.createOrder(orderRequest)
-            metrics["order_insert_ms"] = System.currentTimeMillis() - orderStart
+            metrics["order_insert_ms"] = (System.currentTimeMillis() - orderStart).toString()
             
             val bulkStart = System.currentTimeMillis()
             val (insertedCount, bulkInsertTime) = benchmarkService.bulkInsertEvents(bulkCount, "heavy_write_test")
-            metrics["bulk_insert_count"] = insertedCount
-            metrics["bulk_insert_ms"] = bulkInsertTime
+            metrics["bulk_insert_count"] = insertedCount.toString()
+            metrics["bulk_insert_ms"] = bulkInsertTime.toString()
             
             val insertSelectStart = System.currentTimeMillis()
             val (selectCount, insertSelectTime) = benchmarkService.insertAndSelect("immediate_read_test")
-            metrics["insert_select_ms"] = insertSelectTime
-            metrics["select_result_count"] = selectCount
+            metrics["insert_select_ms"] = insertSelectTime.toString()
+            metrics["select_result_count"] = selectCount.toString()
             
             val cacheInvalidateStart = System.currentTimeMillis()
             redisService.delete("order_summary:$userId")
             redisService.delete("user_stats:$userId")
             redisService.delete("user_meta:$userId")
             redisService.deletePattern("benchmark:*")
-            metrics["cache_invalidations"] = 4
-            metrics["cache_invalidate_ms"] = System.currentTimeMillis() - cacheInvalidateStart
+            metrics["cache_invalidations"] = "4"
+            metrics["cache_invalidate_ms"] = (System.currentTimeMillis() - cacheInvalidateStart).toString()
             
             val kafkaStart = System.currentTimeMillis()
             withContext(Dispatchers.IO) {
@@ -216,28 +220,31 @@ fun Application.configureIORouting() {
                     )
                 }
             }
-            metrics["kafka_events"] = 10
-            metrics["kafka_total_ms"] = System.currentTimeMillis() - kafkaStart
+            metrics["kafka_events"] = "10"
+            metrics["kafka_total_ms"] = (System.currentTimeMillis() - kafkaStart).toString()
             
             val totalTime = System.currentTimeMillis() - startTime
-            metrics["total_ms"] = totalTime
+            metrics["total_ms"] = totalTime.toString()
             metrics["workload"] = "heavy_write"
-            metrics["total_operations"] = 5
+            metrics["total_operations"] = "5"
             
-            call.respond(
-                HttpStatusCode.Created, mapOf(
-                    "result" to mapOf(
-                        "orderId" to orderId, "bulkInserted" to insertedCount, "userId" to userId
-                    ), "metrics" to metrics
-                )
+            val response = IOHeavyWriteResponse(
+                result = WriteResult(
+                    orderId = orderId,
+                    bulkInserted = insertedCount,
+                    userId = userId
+                ),
+                metrics = metrics.mapValues { it.value as Any }.toJsonElement() as JsonObject
             )
+            
+            call.respond(HttpStatusCode.Created, response)
         }
         
         get("/io/stress") {
             val userId = call.request.queryParameters["user_id"]?.toIntOrNull() ?: 1
             
             val startTime = System.currentTimeMillis()
-            val metrics = mutableMapOf<String, Any>()
+            val metrics = mutableMapOf<String, String>()
             
             val heavyReadStart = System.currentTimeMillis()
             
@@ -252,49 +259,52 @@ fun Application.configureIORouting() {
                 val orders = orderQuery.await()
                 val stats = statsQuery.await()
                 
-                metrics["parallel_slow_ms"] = slowTime
-                metrics["parallel_fast_ms"] = fastTime
-                metrics["parallel_results"] = slow.size + fast.size
+                metrics["parallel_slow_ms"] = slowTime.toString()
+                metrics["parallel_fast_ms"] = fastTime.toString()
+                metrics["parallel_results"] = (slow.size + fast.size).toString()
             }
-            metrics["parallel_queries_ms"] = System.currentTimeMillis() - heavyReadStart
+            metrics["parallel_queries_ms"] = (System.currentTimeMillis() - heavyReadStart).toString()
             
             val bulkStart = System.currentTimeMillis()
             val (inserted, insertTime) = benchmarkService.bulkInsertEvents(50, "stress_test")
-            metrics["bulk_insert_ms"] = insertTime
-            metrics["bulk_inserted"] = inserted
+            metrics["bulk_insert_ms"] = insertTime.toString()
+            metrics["bulk_inserted"] = inserted.toString()
             
             val aggStart = System.currentTimeMillis()
             val (aggData, aggTime) = benchmarkService.slowQueryComplexUnindexed(200, 500000)
-            metrics["complex_agg_ms"] = aggTime
+            metrics["complex_agg_ms"] = aggTime.toString()
             
             val kafkaStart = System.currentTimeMillis()
             withContext(Dispatchers.IO) {
                 repeat(20) { i ->
                     kafkaProducer.publishOrderViewed(
                         OrderViewedEvent(
-                            userId = userId + i, orderCount = i, totalAmount = i * 100.0
+                            userId = userId + i,
+                            orderCount = i,
+                            totalAmount = i * 100.0
                         )
                     )
                 }
             }
-            metrics["kafka_20x_ms"] = System.currentTimeMillis() - kafkaStart
+            metrics["kafka_20x_ms"] = (System.currentTimeMillis() - kafkaStart).toString()
             
             val cacheStart = System.currentTimeMillis()
             repeat(10) { i ->
                 redisService.set("stress_key_$i", "value_$i", 60)
                 redisService.get("stress_key_$i")
             }
-            metrics["cache_20x_ops_ms"] = System.currentTimeMillis() - cacheStart
+            metrics["cache_20x_ops_ms"] = (System.currentTimeMillis() - cacheStart).toString()
             
             val totalTime = System.currentTimeMillis() - startTime
-            metrics["total_ms"] = totalTime
+            metrics["total_ms"] = totalTime.toString()
             metrics["workload"] = "stress_test"
             
-            call.respond(
-                HttpStatusCode.OK, mapOf(
-                    "test" to "comprehensive_stress_test", "metrics" to metrics
-                )
+            val response = IOStressResponse(
+                test = "comprehensive_stress_test",
+                metrics = metrics.mapValues { it.value as Any }.toJsonElement() as JsonObject
             )
+            
+            call.respond(HttpStatusCode.OK, response)
         }
         
         get("/io/status") {

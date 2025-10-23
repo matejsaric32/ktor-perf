@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.sql.Connection
 import java.sql.Statement
+import java.sql.Timestamp
 
 class OrderService(
     private val connection : Connection,
@@ -69,7 +70,7 @@ class OrderService(
                 totalOrders = resultSet.getInt("total_orders"),
                 totalSpent = resultSet.getDouble("total_spent"),
                 averageOrderValue = resultSet.getDouble("avg_order_value"),
-                lastOrderDate = resultSet.getLong("last_order_date")
+                lastOrderDate = resultSet.getTimestamp("last_order_date").time
             )
         } else {
             UserStats(
@@ -95,7 +96,7 @@ class OrderService(
             orderStatement.setInt(1, request.userId)
             orderStatement.setDouble(2, request.totalAmount)
             orderStatement.setString(3, request.status)
-            orderStatement.setLong(4, System.currentTimeMillis())
+            orderStatement.setTimestamp(4, Timestamp(System.currentTimeMillis()))
             orderStatement.executeUpdate()
             
             val generatedKeys = orderStatement.generatedKeys
