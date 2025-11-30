@@ -15,7 +15,7 @@ fun Application.configureIORouting() {
     val redisConfig = getRedisConfig()
     val kafkaConfig = getKafkaConfig()
     
-    val dbConnection = connectToDatabase(databaseConfig)
+    val dbConnection = createHikariDataSource(databaseConfig)
     val orderService = OrderService(dbConnection, databaseConfig.schema)
     val benchmarkService = BenchmarkService(dbConnection, databaseConfig.schema)
     val redisService = RedisService(redisConfig)

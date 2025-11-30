@@ -11,6 +11,15 @@ database:
   driver: "org.postgresql.Driver"
   schema: "perf"
   embedded: false
+  hikari:
+    maximumPoolSize: 10
+    minimumIdle: 2
+    idleTimeout: 600000
+    connectionTimeout: 30000
+    maxLifetime: 1800000
+    poolName: "KtorPerfPool"
+    autoCommit: true
+    connectionTestQuery: "SELECT 1"
 redis:
   host: "localhost"
   port: 6379

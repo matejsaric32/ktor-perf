@@ -5,6 +5,7 @@ val logback_version : String by project
 val postgres_version : String by project
 val jedis_version : String by project
 val kafka_version : String by project
+val hikari_version : String by project
 
 plugins {
     kotlin("jvm") version "2.2.20"
@@ -34,6 +35,6 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
     implementation("redis.clients:jedis:$jedis_version")
     implementation("org.apache.kafka:kafka-clients:$kafka_version")
-    
+    implementation("com.zaxxer:HikariCP:$hikari_version")
     
 }
