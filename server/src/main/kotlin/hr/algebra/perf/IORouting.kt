@@ -12,13 +12,11 @@ import kotlinx.serialization.json.*
 
 fun Application.configureIORouting() {
     val databaseConfig = getDatabaseConfig()
-    val redisConfig = getRedisConfig()
     val kafkaConfig = getKafkaConfig()
     
     val dbConnection = createHikariDataSource(databaseConfig)
     val orderService = OrderService(dbConnection, databaseConfig.schema)
     val benchmarkService = BenchmarkService(dbConnection, databaseConfig.schema)
-    val redisService = RedisService(redisConfig)
     val kafkaProducer = KafkaProducerService(kafkaConfig)
     
     routing {
@@ -29,25 +27,17 @@ fun Application.configureIORouting() {
             
             val startTime = System.currentTimeMillis()
             
-            val cacheKey = "order_summary:$userId"
-            val redisStart = System.currentTimeMillis()
-            val cachedSummary = redisService.getObject<OrderSummary>(cacheKey)
-            val redisGetMs = System.currentTimeMillis() - redisStart
-            
             val dbStart = System.currentTimeMillis()
-            val orderSummary = cachedSummary ?: orderService.getOrderSummary(userId).also {
-                redisService.setObject(cacheKey, it, ttlSeconds = redisConfig.ttl)
-            }
-            val dbQueryMs = if (cachedSummary != null) 0L else System.currentTimeMillis() - dbStart
+            val orderSummary = orderService.getOrderSummary(userId)
+            val dbQueryMs = System.currentTimeMillis() - dbStart
             
             val kafkaStart = System.currentTimeMillis()
             withContext(Dispatchers.IO) {
                 kafkaProducer.publishOrderViewed(
                     OrderViewedEvent(
-                        userId = userId,
-                        orderCount = orderSummary.orders.size,
-                        totalAmount = orderSummary.orders.sumOf { it.totalAmount })
-                )
+                    userId = userId,
+                    orderCount = orderSummary.orders.size,
+                    totalAmount = orderSummary.orders.sumOf { it.totalAmount }))
             }
             val kafkaPublishMs = System.currentTimeMillis() - kafkaStart
             
@@ -55,13 +45,13 @@ fun Application.configureIORouting() {
             
             val response = IOLightResponse(
                 data = orderSummary, metrics = IOMetrics(
-                    redisGetMs = redisGetMs,
-                    cacheHit = cachedSummary != null,
+                    redisGetMs = 0,
+                    cacheHit = false,
                     dbQueryMs = dbQueryMs,
                     kafkaPublishMs = kafkaPublishMs,
                     totalMs = totalMs,
                     workload = "light",
-                    operations = 3
+                    operations = 2
                 )
             )
             
@@ -77,19 +67,6 @@ fun Application.configureIORouting() {
             val metrics = mutableMapOf<String, Any>()
             val operationCount = mutableListOf<String>()
             
-            val redisStart = System.currentTimeMillis()
-            val cacheKey1 = "order_summary:$userId"
-            val cacheKey2 = "user_stats:$userId"
-            val cacheKey3 = "user_meta:$userId"
-            
-            val cached1 = redisService.get(cacheKey1)
-            val cached2 = redisService.get(cacheKey2)
-            val cached3 = redisService.get(cacheKey3)
-            metrics["redis_operations"] = 3
-            metrics["redis_total_ms"] = System.currentTimeMillis() - redisStart
-            operationCount.add("redis_3x")
-            
-            val slowQueryStart = System.currentTimeMillis()
             val (slowResults, slowQueryTime) = benchmarkService.slowQueryUnindexedSessionId(
                 "session-${userId % 10}", 50
             )
@@ -97,7 +74,6 @@ fun Application.configureIORouting() {
             metrics["slow_query_results"] = slowResults.size
             operationCount.add("slow_unindexed_query")
             
-            val fastQueryStart = System.currentTimeMillis()
             val (fastResults, fastQueryTime) = benchmarkService.fastQueryIndexed(userId, 100)
             metrics["fast_query_ms"] = fastQueryTime
             metrics["fast_query_results"] = fastResults.size
@@ -113,7 +89,6 @@ fun Application.configureIORouting() {
             metrics["stats_query_ms"] = System.currentTimeMillis() - statsStart
             operationCount.add("stats_aggregation")
             
-            val aggStart = System.currentTimeMillis()
             val (aggData, aggTime) = benchmarkService.slowQueryUnindexedActionType("purchase")
             metrics["complex_aggregation_ms"] = aggTime
             operationCount.add("complex_aggregation")
@@ -122,10 +97,9 @@ fun Application.configureIORouting() {
             withContext(Dispatchers.IO) {
                 kafkaProducer.publishOrderViewed(
                     OrderViewedEvent(
-                        userId = userId,
-                        orderCount = orderSummary.orders.size,
-                        totalAmount = orderSummary.orders.sumOf { it.totalAmount })
-                )
+                    userId = userId,
+                    orderCount = orderSummary.orders.size,
+                    totalAmount = orderSummary.orders.sumOf { it.totalAmount }))
                 
                 repeat(4) { i ->
                     kafkaProducer.publishOrderViewed(
@@ -138,16 +112,6 @@ fun Application.configureIORouting() {
             metrics["kafka_events"] = 5
             metrics["kafka_total_ms"] = System.currentTimeMillis() - kafkaStart
             operationCount.add("kafka_5x_events")
-            
-            val cacheWriteStart = System.currentTimeMillis()
-            redisService.setObject(cacheKey1, orderSummary, ttlSeconds = redisConfig.ttl)
-            redisService.set(cacheKey2, redisService.json.encodeToString(userStats), ttlSeconds = redisConfig.ttl)
-            redisService.set(
-                cacheKey3, """{"processed": true, "timestamp": ${System.currentTimeMillis()}}""", ttlSeconds = 60
-            )
-            metrics["cache_writes"] = 3
-            metrics["cache_write_ms"] = System.currentTimeMillis() - cacheWriteStart
-            operationCount.add("redis_3x_writes")
             
             val totalTime = System.currentTimeMillis() - startTime
             metrics["total_ms"] = totalTime
@@ -162,8 +126,7 @@ fun Application.configureIORouting() {
                     slowQueryResults = slowResults.size,
                     fastQueryResults = fastResults.size,
                     aggregationData = aggData.toJsonElement() as JsonObject
-                ),
-                metrics = metrics.mapValues { it.value }.toJsonElement() as JsonObject
+                ), metrics = metrics.mapValues { it.value }.toJsonElement() as JsonObject
             )
             
             call.respond(HttpStatusCode.OK, response)
@@ -178,34 +141,20 @@ fun Application.configureIORouting() {
             
             val orderStart = System.currentTimeMillis()
             val orderRequest = CreateOrderRequest(
-                userId = userId,
-                totalAmount = 100.0 + (userId * 10),
-                status = "pending",
-                items = listOf(
-                    OrderItem("Product-A", 1, 50.0),
-                    OrderItem("Product-B", 2, 25.0)
+                userId = userId, totalAmount = 100.0 + (userId * 10), status = "pending", items = listOf(
+                    OrderItem("Product-A", 1, 50.0), OrderItem("Product-B", 2, 25.0)
                 )
             )
             val orderId = orderService.createOrder(orderRequest)
             metrics["order_insert_ms"] = (System.currentTimeMillis() - orderStart).toString()
             
-            val bulkStart = System.currentTimeMillis()
             val (insertedCount, bulkInsertTime) = benchmarkService.bulkInsertEvents(bulkCount, "heavy_write_test")
             metrics["bulk_insert_count"] = insertedCount.toString()
             metrics["bulk_insert_ms"] = bulkInsertTime.toString()
             
-            val insertSelectStart = System.currentTimeMillis()
             val (selectCount, insertSelectTime) = benchmarkService.insertAndSelect("immediate_read_test")
             metrics["insert_select_ms"] = insertSelectTime.toString()
             metrics["select_result_count"] = selectCount.toString()
-            
-            val cacheInvalidateStart = System.currentTimeMillis()
-            redisService.delete("order_summary:$userId")
-            redisService.delete("user_stats:$userId")
-            redisService.delete("user_meta:$userId")
-            redisService.deletePattern("benchmark:*")
-            metrics["cache_invalidations"] = "4"
-            metrics["cache_invalidate_ms"] = (System.currentTimeMillis() - cacheInvalidateStart).toString()
             
             val kafkaStart = System.currentTimeMillis()
             withContext(Dispatchers.IO) {
@@ -226,15 +175,12 @@ fun Application.configureIORouting() {
             val totalTime = System.currentTimeMillis() - startTime
             metrics["total_ms"] = totalTime.toString()
             metrics["workload"] = "heavy_write"
-            metrics["total_operations"] = "5"
+            metrics["total_operations"] = "4"
             
             val response = IOHeavyWriteResponse(
                 result = WriteResult(
-                    orderId = orderId,
-                    bulkInserted = insertedCount,
-                    userId = userId
-                ),
-                metrics = metrics.mapValues { it.value as Any }.toJsonElement() as JsonObject
+                    orderId = orderId, bulkInserted = insertedCount, userId = userId
+                ), metrics = metrics.mapValues { it.value as Any }.toJsonElement() as JsonObject
             )
             
             call.respond(HttpStatusCode.Created, response)
@@ -256,8 +202,8 @@ fun Application.configureIORouting() {
                 
                 val (slow, slowTime) = slowQuery.await()
                 val (fast, fastTime) = fastQuery.await()
-                val orders = orderQuery.await()
-                val stats = statsQuery.await()
+                orderQuery.await()
+                statsQuery.await()
                 
                 metrics["parallel_slow_ms"] = slowTime.toString()
                 metrics["parallel_fast_ms"] = fastTime.toString()
@@ -265,13 +211,11 @@ fun Application.configureIORouting() {
             }
             metrics["parallel_queries_ms"] = (System.currentTimeMillis() - heavyReadStart).toString()
             
-            val bulkStart = System.currentTimeMillis()
             val (inserted, insertTime) = benchmarkService.bulkInsertEvents(50, "stress_test")
             metrics["bulk_insert_ms"] = insertTime.toString()
             metrics["bulk_inserted"] = inserted.toString()
             
-            val aggStart = System.currentTimeMillis()
-            val (aggData, aggTime) = benchmarkService.slowQueryComplexUnindexed(200, 500000)
+            val (_, aggTime) = benchmarkService.slowQueryComplexUnindexed(200, 500000)
             metrics["complex_agg_ms"] = aggTime.toString()
             
             val kafkaStart = System.currentTimeMillis()
@@ -279,21 +223,12 @@ fun Application.configureIORouting() {
                 repeat(20) { i ->
                     kafkaProducer.publishOrderViewed(
                         OrderViewedEvent(
-                            userId = userId + i,
-                            orderCount = i,
-                            totalAmount = i * 100.0
+                            userId = userId + i, orderCount = i, totalAmount = i * 100.0
                         )
                     )
                 }
             }
             metrics["kafka_20x_ms"] = (System.currentTimeMillis() - kafkaStart).toString()
-            
-            val cacheStart = System.currentTimeMillis()
-            repeat(10) { i ->
-                redisService.set("stress_key_$i", "value_$i", 60)
-                redisService.get("stress_key_$i")
-            }
-            metrics["cache_20x_ops_ms"] = (System.currentTimeMillis() - cacheStart).toString()
             
             val totalTime = System.currentTimeMillis() - startTime
             metrics["total_ms"] = totalTime.toString()
@@ -313,14 +248,14 @@ fun Application.configureIORouting() {
             call.respond(
                 HttpStatusCode.OK, mapOf(
                     "status" to "operational", "services" to mapOf(
-                        "database" to "connected", "redis" to "connected", "kafka" to "connected"
+                        "database" to "connected", "kafka" to "connected"
                     ), "benchmark_data" to mapOf(
                         "total_rows" to benchmarkRows, "ready" to (benchmarkRows > 0)
                     ), "endpoints" to mapOf(
-                        "light" to "/io/light (1 DB + 1 Redis + 1 Kafka)",
-                        "heavy" to "/io/heavy (6 DB queries + 8 Redis + 5 Kafka)",
-                        "heavy_write" to "/io/heavy/write (3 DB writes + 4 cache ops + 10 Kafka)",
-                        "stress" to "/io/stress (parallel queries + bulk ops + heavy events)"
+                        "light" to "/io/light (1 DB + 1 Kafka)",
+                        "heavy" to "/io/heavy (5 DB queries + 5 Kafka)",
+                        "heavy_write" to "/io/heavy/write (3 DB writes + 10 Kafka)",
+                        "stress" to "/io/stress (parallel queries + bulk ops + 20 Kafka)"
                     )
                 )
             )
