@@ -31,8 +31,8 @@ in Containerized Environments"*
 ./gradlew :server:build -x test
 ```
 
-### Docker image
+### Podman image
 
 ```bash
-docker build -t ktor-perf:latest .
+podman build -t ktor-perf:latest .
 ```
