@@ -4,8 +4,18 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import hr.algebra.perf.config.DatabaseConfig
 import io.ktor.server.application.*
+import io.ktor.util.*
+
+val DataSourceKey = AttributeKey<HikariDataSource>("DataSource")
 
 fun Application.configureDatabases() {
+    val config = getDatabaseConfig()
+    val dataSource = createHikariDataSource(config)
+    attributes.put(DataSourceKey, dataSource)
+
+    monitor.subscribe(ApplicationStopped) {
+        dataSource.close()
+    }
 }
 
 fun Application.getDatabaseConfig() : DatabaseConfig {
@@ -36,7 +46,7 @@ fun Application.createHikariDataSource(config : DatabaseConfig) : HikariDataSour
         password = config.password
         driverClassName = config.driverClassName
         schema = config.schema
-        
+
         maximumPoolSize = config.hikari.maximumPoolSize
         minimumIdle = config.hikari.minimumIdle
         idleTimeout = config.hikari.idleTimeout
@@ -46,7 +56,7 @@ fun Application.createHikariDataSource(config : DatabaseConfig) : HikariDataSour
         isAutoCommit = config.hikari.autoCommit
         connectionTestQuery = config.hikari.connectionTestQuery
     }
-    
+
     log.info("Creating HikariCP DataSource for ${config.jdbcUrl} with pool size ${config.hikari.maximumPoolSize}")
     return HikariDataSource(hikariConfig)
 }
